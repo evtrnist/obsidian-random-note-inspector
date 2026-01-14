@@ -1,99 +1,88 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import {
+	MarkdownView,
+	Notice,
+	Plugin,
+	TFile,
+} from "obsidian";
+import { RandomInspectorData } from "random-inspector-data";
 
-// Remember to rename these classes and interfaces!
+const DEFAULT_DATA: RandomInspectorData = {
+	remainingPaths: [],
+};
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+export default class RandomNoteInspector extends Plugin {
+	private data: RandomInspectorData = {
+		remainingPaths: [],
+	};
 
 	async onload() {
-		await this.loadSettings();
+		const loadedData =
+			(await this.loadData()) as Partial<RandomInspectorData> | null;
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
+		this.data = {
+			...DEFAULT_DATA,
+			...loadedData,
+		};
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
-
-		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
+			id: "inspect-random-note",
+			name: "Inspect random note",
+			callback: () => this.inspectNote(),
 		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
-			}
-		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-
 	}
 
-	onunload() {
+	private async inspectNote() {
+		if (this.data.remainingPaths.length === 0) {
+			await this.startNewCycle();
+		}
+
+		if (this.data.remainingPaths.length === 0) {
+			new Notice("No notes available for inspection.");
+
+			return;
+		}
+
+		const path = this.data.remainingPaths.shift()!;
+
+		await this.saveData(this.data);
+
+		const file = this.app.vault.getAbstractFileByPath(path);
+
+		if (!(file instanceof TFile)) {
+			return;
+		}
+
+		await this.openAndHighlightFile(file);
 	}
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
+	private async startNewCycle() {
+		const files = this.app.vault.getMarkdownFiles();
+
+		const paths = files.map((file) => file.path);
+
+		this.data.remainingPaths = this.shuffle(paths);
+
+		await this.saveData(this.data);
 	}
 
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
-}
+	private shuffle<T>(paths: T[]): T[] {
+		const result = [...paths];
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
+		for (let i = result.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[result[i], result[j]] = [result[j]!, result[i]!];
+		}
+		return result;
 	}
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
+	private async openAndHighlightFile(file: TFile) {
+		const leaf = this.app.workspace.getLeaf(false);
+
+		await leaf.openFile(file);
+
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		view?.containerEl.addClass("random-note-inspector-highlight");
+
+		new Notice(`Inspect: ${file.basename}`);
 	}
 }
