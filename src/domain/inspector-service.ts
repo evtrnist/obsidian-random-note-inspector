@@ -32,10 +32,32 @@ export class InspectorService {
         onRemainingPathsChange: (next: string[]) => Promise<void>,
         eligibility: FileEligibility
     ) {
+        const tryInspect = async (paths: string[]): Promise<boolean> => {
+            let remaining = paths;
+
+            while (remaining.length > 0) {
+                const path = remaining[0]!;
+                const next = remaining.slice(1);
+                const file = this.app.vault.getAbstractFileByPath(path);
+
+                if (!(file instanceof TFile)) {
+                    remaining = next;
+                    continue;
+                }
+
+                await onRemainingPathsChange(next);
+                await this.openAndHighlight(file);
+                new Notice(`Inspect: ${file.basename}`);
+                return true;
+            }
+
+            await onRemainingPathsChange([]);
+            return false;
+        };
+
         if (remainingPaths.length === 0) {
             const files = eligibility.filterEligibleMarkdownFiles(this.app.vault.getMarkdownFiles());
-            const paths = this.shuffle(files.map((f) => f.path));
-            remainingPaths = paths;
+            remainingPaths = this.shuffle(files.map((f) => f.path));
             await onRemainingPathsChange(remainingPaths);
         }
 
@@ -44,25 +66,30 @@ export class InspectorService {
             return;
         }
 
-        const path = remainingPaths[0]!;
-        const next = remainingPaths.slice(1);
-        await onRemainingPathsChange(next);
-
-        const file = this.app.vault.getAbstractFileByPath(path);
-        if (!(file instanceof TFile)) {
+        if (await tryInspect(remainingPaths)) {
             return;
         }
 
-        await this.openAndHighlight(file);
-        new Notice(`Inspect: ${file.basename}`);
+        const refreshedFiles = eligibility.filterEligibleMarkdownFiles(this.app.vault.getMarkdownFiles());
+        const refreshedPaths = this.shuffle(refreshedFiles.map((f) => f.path));
+        if (refreshedPaths.length === 0 || !(await tryInspect(refreshedPaths))) {
+            new Notice("No notes found in vault");
+        }
     }
 
     async findOrphanNote(eligibility: FileEligibility) {
         const files = eligibility.filterEligibleMarkdownFiles(this.app.vault.getMarkdownFiles());
         const resolvedLinks = this.app.metadataCache.resolvedLinks;
+        const incomingLinks = new Set<string>();
+
+        for (const targets of Object.values(resolvedLinks)) {
+            for (const targetPath of Object.keys(targets)) {
+                incomingLinks.add(targetPath);
+            }
+        }
 
         for (const file of files) {
-            if (this.isOrphan(file, resolvedLinks)) {
+            if (this.isOrphan(file, resolvedLinks, incomingLinks)) {
                 await this.openAndHighlight(file);
                 new Notice(`Orphan: ${file.basename}`);
                 return;
@@ -72,16 +99,18 @@ export class InspectorService {
         new Notice("No orphan notes found");
     }
 
-    private isOrphan(file: TFile, resolvedLinks: Record<string, Record<string, number>>): boolean {
+    private isOrphan(
+        file: TFile,
+        resolvedLinks: Record<string, Record<string, number>>,
+        incomingLinks: Set<string>
+    ): boolean {
         const cache = this.app.metadataCache.getFileCache(file);
 
         const hasOutgoingLinks =
             (cache?.links?.length ?? 0) > 0 ||
             (cache?.embeds?.length ?? 0) > 0;
 
-        const hasIncomingLinks = Object.values(resolvedLinks).some((targets) => {
-            return targets[file.path] !== undefined;
-        });
+        const hasIncomingLinks = incomingLinks.has(file.path);
 
         return !hasOutgoingLinks && !hasIncomingLinks;
     }

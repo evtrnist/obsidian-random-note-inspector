@@ -9,7 +9,6 @@
 }
 
 .random-note-inspector-status-state {
-    border: 1px solid var(--background-modifier-border);
     border-radius: 999px;
     padding: 2px 8px;
     background: var(--background-secondary);
@@ -39,14 +38,13 @@
     height: 26px;
     padding: 0;
 
-    border: 1px solid var(--background-modifier-border);
     border-radius: 6px;
     background: var(--background-secondary);
 
     cursor: pointer;
 }
 
-.random-note-inspector-status-btn:hover {
+.random-note-inspector-status-btn:hover .random-note-inspector-status-btn {
     background: var(--background-modifier-hover);
 }
 

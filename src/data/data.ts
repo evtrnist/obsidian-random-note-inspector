@@ -10,6 +10,3 @@ export const DEFAULT_DATA: RandomInspectorData = {
     excludedFolders: [],
 };
 
-export function normalizePath(path: string): string {
-    return path.replace(/\\/g, "/").replace(/\/+$/, "");
-}
