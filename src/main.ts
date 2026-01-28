@@ -1,88 +1,192 @@
-import {
-	MarkdownView,
-	Notice,
-	Plugin,
-	TFile,
-} from "obsidian";
-import { RandomInspectorData } from "random-inspector-data";
-
-const DEFAULT_DATA: RandomInspectorData = {
-	remainingPaths: [],
-};
+import { Notice, Plugin, TFolder } from "obsidian";
+import { DataStore } from "./data/store";
+import { normalizePath } from "./data/data";
+import { FileEligibility } from "./domain/file-eligibility";
+import { InspectorService } from "./domain/inspector-service";
+import { InspectorStatusBar } from "./ui/status-bar";
 
 export default class RandomNoteInspector extends Plugin {
-	private data: RandomInspectorData = {
-		remainingPaths: [],
-	};
+    private store: DataStore | null = null;
+    private inspector: InspectorService | null = null;
+    private statusBar: InspectorStatusBar | null = null;
 
-	async onload() {
-		const loadedData =
-			(await this.loadData()) as Partial<RandomInspectorData> | null;
+    async onload() {
+        this.store = new DataStore(this);
+		
+        await this.store.load();
 
-		this.data = {
-			...DEFAULT_DATA,
-			...loadedData,
-		};
+        this.inspector = new InspectorService(this.app);
 
-		this.addCommand({
-			id: "inspect-random-note",
-			name: "Inspect random note",
-			callback: () => this.inspectNote(),
-		});
-	}
+        this.statusBar = new InspectorStatusBar(this.addStatusBarItem(), {
+            onToggle: () => {
+                void this.toggleInspector();
+            },
+            onRandom: () => {
+                void this.inspectRandomNote();
+            },
+            onDone: () => {
+                void this.setInspectorEnabled(false);
+            },
+            onFindOrphan: () => {
+                void this.findOrphanNote();
+            },
+        });
 
-	private async inspectNote() {
-		if (this.data.remainingPaths.length === 0) {
-			await this.startNewCycle();
-		}
+        this.renderStatusBar();
+        this.addCommands();
+        this.registerFolderMenu();
+    }
 
-		if (this.data.remainingPaths.length === 0) {
-			new Notice("No notes available for inspection.");
+    onunload() {
+        this.inspector?.clearHighlight();
+    }
 
-			return;
-		}
+    private getEligibility(): FileEligibility {
+        const data = this.store!.get();
+        return new FileEligibility(data.excludedFolders);
+    }
 
-		const path = this.data.remainingPaths.shift()!;
+    private renderStatusBar() {
+        const enabled = this.store!.get().enabled;
+        this.statusBar?.render(enabled ? "on" : "off");
+    }
 
-		await this.saveData(this.data);
+    private addCommands() {
+        this.addCommand({
+            id: "toggle-inspector",
+            name: "Toggle inspector",
+            callback: () => {
+                void this.toggleInspector();
+            },
+        });
 
-		const file = this.app.vault.getAbstractFileByPath(path);
+        this.addCommand({
+            id: "inspect-random-note",
+            name: "Inspect random note",
+            callback: () => {
+                void this.inspectRandomNote();
+            },
+        });
 
-		if (!(file instanceof TFile)) {
-			return;
-		}
+        this.addCommand({
+            id: "find-orphan-note",
+            name: "Find orphan note",
+            callback: () => {
+                void this.findOrphanNote();
+            },
+        });
+    }
 
-		await this.openAndHighlightFile(file);
-	}
+    private registerFolderMenu() {
+        this.registerEvent(
+            this.app.workspace.on("file-menu", (menu, file) => {
+                if (!(file instanceof TFolder)) {
+                    return;
+                }
 
-	private async startNewCycle() {
-		const files = this.app.vault.getMarkdownFiles();
+                const folderPath = file.path;
+                const eligibility = this.getEligibility();
 
-		const paths = files.map((file) => file.path);
+                if (!eligibility.isExcludedFolder(folderPath)) {
+                    menu.addItem((item) => {
+                        item.setTitle("Exclude from inspector");
+                        item.setIcon("ban");
+                        item.onClick(() => {
+                            void this.excludeFolder(folderPath);
+                        });
+                    });
+                } else {
+                    menu.addItem((item) => {
+                        item.setTitle("Include in inspector");
+                        item.setIcon("check");
+                        item.onClick(() => {
+                            void this.includeFolder(folderPath);
+                        });
+                    });
+                }
+            })
+        );
+    }
 
-		this.data.remainingPaths = this.shuffle(paths);
+    private async toggleInspector() {
+        const enabled = this.store!.get().enabled;
+        await this.setInspectorEnabled(!enabled);
+    }
 
-		await this.saveData(this.data);
-	}
+    private async setInspectorEnabled(enabled: boolean) {
+        await this.store!.update({ enabled });
 
-	private shuffle<T>(paths: T[]): T[] {
-		const result = [...paths];
+        if (!enabled) {
+            this.inspector?.clearHighlight();
+        }
 
-		for (let i = result.length - 1; i > 0; i--) {
-			const j = Math.floor(Math.random() * (i + 1));
-			[result[i], result[j]] = [result[j]!, result[i]!];
-		}
-		return result;
-	}
+        this.renderStatusBar();
+        new Notice(enabled ? "Inspector enabled" : "Inspector disabled");
+    }
 
-	private async openAndHighlightFile(file: TFile) {
-		const leaf = this.app.workspace.getLeaf(false);
+    private async inspectRandomNote() {
+        const data = this.store!.get();
 
-		await leaf.openFile(file);
+        if (!data.enabled) {
+            new Notice("Inspector is off");
+            return;
+        }
 
-		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-		view?.containerEl.addClass("random-note-inspector-highlight");
+        if (!this.inspector) {
+            return;
+        }
 
-		new Notice(`Inspect: ${file.basename}`);
-	}
+        const eligibility = this.getEligibility();
+
+        await this.inspector.inspectRandomNote(
+            data.remainingPaths,
+            async (nextRemainingPaths) => {
+                await this.store!.update({ remainingPaths: nextRemainingPaths });
+            },
+            eligibility
+        );
+    }
+
+    private async findOrphanNote() {
+        const data = this.store!.get();
+
+        if (!data.enabled) {
+            new Notice("Inspector is off");
+            return;
+        }
+
+        await this.inspector!.findOrphanNote(this.getEligibility());
+    }
+
+    private async excludeFolder(folderPath: string) {
+        const normalized = normalizePath(folderPath);
+
+        await this.store!.update((prev) => {
+            if (prev.excludedFolders.includes(normalized)) {
+                return prev;
+            }
+
+            return {
+                ...prev,
+                excludedFolders: [...prev.excludedFolders, normalized],
+                remainingPaths: [],
+            };
+        });
+
+        new Notice("Folder excluded from inspector");
+    }
+
+    private async includeFolder(folderPath: string) {
+        const normalized = normalizePath(folderPath);
+
+        await this.store!.update((prev) => {
+            return {
+                ...prev,
+                excludedFolders: prev.excludedFolders.filter((p) => p !== normalized),
+                remainingPaths: [],
+            };
+        });
+
+        new Notice("Folder included in inspector");
+    }
 }
