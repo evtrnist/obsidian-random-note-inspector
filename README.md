@@ -1,13 +1,20 @@
 # Random Note Inspector
 
-Randomly selects a note from your vault to review or clean up.
-Each note is shown once per cycle — no repeats until all notes are inspected.
+Inspect your notes intentionally instead of randomly browsing your vault.
+
+## Features
+- Inspector mode (on/off)
+- Random note inspection without repeats
+- Orphan note finder (notes without links)
+- Exclude folders via context menu
+- Visual highlight during inspection
 
 ## Usage
-- Open Command Palette
-- Run **Inspect random note**
+- Enable Inspector from the status bar
+- Use 🎲 to inspect a random note
+- Use ⛓️‍💥 to find an orphan note
+- Use ✅ when inspection is done
 
-## How it works
-- Notes are shuffled into a cycle
-- Each command picks the next note
-- Progress is saved between restarts
+## Why
+This plugin helps you review, clean up, and connect your notes gradually,
+without pressure and without repetition.
