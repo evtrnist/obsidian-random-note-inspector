@@ -44,9 +44,6 @@
     cursor: pointer;
 }
 
-.random-note-inspector-status-btn:hover .random-note-inspector-status-btn {
-    background: var(--background-modifier-hover);
-}
 
 .random-note-inspector-status-btn svg {
     width: 16px;
