@@ -1,3 +1,51 @@
 .random-note-inspector-highlight {
     box-shadow: inset 0 0 0 3px var(--interactive-accent);
 }
+
+.random-note-inspector-status-root {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.random-note-inspector-status-state {
+    border-radius: 999px;
+    padding: 2px 8px;
+    background: var(--background-secondary);
+    cursor: pointer;
+}
+
+.random-note-inspector-status-state:hover {
+    background: var(--background-modifier-hover);
+}
+
+.random-note-inspector-status-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.random-note-inspector-status-actions.is-hidden {
+    display: none;
+}
+
+.random-note-inspector-status-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 26px;
+    height: 26px;
+    padding: 0;
+
+    border-radius: 6px;
+    background: var(--background-secondary);
+
+    cursor: pointer;
+}
+
+
+.random-note-inspector-status-btn svg {
+    width: 16px;
+    height: 16px;
+}
